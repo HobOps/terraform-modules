@@ -1,16 +1,34 @@
 # Uptime checks
-resource "google_monitoring_uptime_check_config" "https_get" {
-  for_each = var.monitored_hosts.uptime_url.get
+resource "google_monitoring_uptime_check_config" "default" {
+  for_each = var.monitored_hosts
   display_name = each.key
   timeout = each.value["timeout"]
   period = each.value["period"]
 
-  http_check {
-    path = each.value["path"]
-    port = each.value["port"]
-    request_method = "GET"
-    use_ssl = each.value["use_ssl"]
-    validate_ssl = each.value["validate_ssl"]
+  # http_check GET
+  dynamic "http_check" {
+    for_each = each.value["check"]["method"] == "GET" ? ["ok"] : []
+    content {
+      path = each.value["path"]
+      port = each.value["port"]
+      request_method = "GET"
+      use_ssl = each.value["use_ssl"]
+      validate_ssl = each.value["validate_ssl"]
+    }
+  }
+
+  # http_check POST
+  dynamic "http_check" {
+    for_each = each.value["check"]["method"] == "POST" ? ["ok"] : []
+    content {
+      path = each.value["path"]
+      port = each.value["port"]
+      request_method = "POST"
+      use_ssl = each.value["use_ssl"]
+      validate_ssl = each.value["validate_ssl"]
+      content_type = "URL_ENCODED"
+      body = each.value["check"]["body_base64"]
+    }
   }
 
   monitored_resource {
@@ -30,8 +48,8 @@ resource "google_monitoring_uptime_check_config" "https_get" {
 
 # Alert Policies
 resource "google_monitoring_alert_policy" "default" {
-  for_each = var.monitored_hosts.uptime_url.get
-  depends_on = [google_monitoring_uptime_check_config.https_get]
+  for_each = var.monitored_hosts
+  depends_on = [google_monitoring_uptime_check_config.default]
   display_name = each.key
   enabled = each.value["alerts_enabled"]
   notification_channels = var.notification_channels
@@ -80,7 +98,6 @@ resource "google_monitoring_alert_policy" "default" {
       }
     }
   }
-
 
   # Certificate expiration check, only if use_ssl == true
   dynamic "conditions" {
